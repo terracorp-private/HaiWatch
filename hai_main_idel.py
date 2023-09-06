@@ -4,6 +4,7 @@ import warnings
 warnings.simplefilter(action='ignore', category=Warning)
 import pandas as pd
 import glob
+import re
 
 TUMOR = input("name of the entity ")
 THRESHOLD = float(input("loss/ampl threshold "))
@@ -64,8 +65,10 @@ def filterCNV(cnvFrame,varFrame,ALL_FREQ=0.3,READ_DP=15,del_cutoff=-0.1,gain_cut
     vars = vars[vars['Func.refGene'] != 'intronic'] # include only exonic variants
     vars["Chr"] = vars["Chr"].replace(regex=r'X',value = 23) # rename chromosome X to 23
     vars["Chr"] = vars["Chr"].replace(regex=r'Y',value = 24) # rename chromosome Y to 24
+    vars["Chr"] = vars["Chr"].astype(str)
+    vars = vars[vars["Chr"].str.match("\d")] # remove all non digit-like strings
     vars["Chr"] = vars["Chr"].astype("int")
-    vars = vars[vars['AF'].astype("float") >= ALL_FREQ]
+    vars = vars[vars['AF'].str.replace(",",".").astype("float") >= ALL_FREQ]
     vars = vars[vars['DP'].astype("int") >= READ_DP]
     varRel = vars[vars['ExonicFunc.refGene'] != 'synonymous SNV']
 
@@ -123,8 +126,10 @@ cnvID,tumorID = sourceIntegrity()
 # read a .idat and tumorID pair into a dataframe
 for f_cnv,f_var in zip(cnvID,tumorID):
     cnv_file = glob.glob(path_cnv + f_cnv + '.bins.igv')[0]
-    var_file = glob.glob(path_var + str(f_var) + '-DNA-FFPE_MPILEUP_SNP.recode_filtered_DP15_AF0.1.hg19_multianno._sort.csv')[0]
-    print(var_file)
+    try:
+        var_file = glob.glob(path_var + str(f_var) + '-DNA-FFPE_PLATYPUS_comp_INDEL.recode_filtered_DP15-1.hg19_multianno._sort.csv')[0]
+    except:
+        pass
     cnvFrame = pd.read_csv(cnv_file, sep="\t", header=0, names=['chrom', 'start', 'end', 'feature', 'metrics'])
     varFrame = pd.read_csv(var_file, sep=';')
     geneAmpl, geneLoss = filterCNV(cnvFrame,varFrame,del_cutoff=-THRESHOLD,gain_cutoff=THRESHOLD)
@@ -135,5 +140,5 @@ for f_cnv,f_var in zip(cnvID,tumorID):
 
 # dfAmpl = dfAmpl[dfAmpl.duplicated(subset=['gene'], keep=False)]
 # dfLoss = dfLoss[dfLoss.duplicated(subset=['gene'], keep=False)]
-dfLoss.to_csv(TUMOR + "_lost.csv")
-dfAmpl.to_csv(TUMOR + "_ampl.csv")
+dfLoss.to_csv(TUMOR + "_lost_INDEL.csv")
+dfAmpl.to_csv(TUMOR + "_ampl_INDEL.csv")

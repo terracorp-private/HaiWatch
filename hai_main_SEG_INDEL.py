@@ -6,7 +6,6 @@ import pandas as pd
 import glob
 
 TUMOR = input("name of the entity ")
-THRESHOLD = float(input("loss/ampl threshold "))
 
 # path_cnv = '/home/alpha/programs/python_files/datasets/cnv_and_mut/'+ TUMOR + '_cnv/*'
 path_cnv = '/home/alpha/programs/python_files/datasets/cnv_and_mut/'+ TUMOR + '_cnv/*'
@@ -42,17 +41,17 @@ def sourceIntegrity():
     return cnvID,tumorID
 
 
-def filterCNV(cnvFrame,varFrame,ALL_FREQ=0.3,READ_DP=15,del_cutoff=-0.1,gain_cutoff=0.3):
+def filterCNV(cnvFrame,varFrame,ALL_FREQ=0.3,READ_DP=15):
 
     # filter CNVP
-    cnv = cnvFrame[['chrom','feature','start','end','metrics']]
+    cnv = cnvFrame[['chrom','alteration','loc.start','loc.end','seg.mean']]
     cnv["chrom"] = cnv["chrom"].replace(regex=r'[a-z]',value = '')
     cnv["chrom"] = cnv["chrom"].replace(regex=r'X',value = 23)
     cnv["chrom"] = cnv["chrom"].replace(regex=r'Y',value = 24)
     cnv["chrom"] = cnv["chrom"].astype("int")
-    cnvAmpl = cnv[cnv['metrics'].astype("float") > gain_cutoff]
-    # cnvLoss = cnv[(cnv['metrics'] < del_cutoff) & (cnv['metrics'] > -0.45)]
-    cnvLoss = cnv[cnv['metrics'].astype("float") < del_cutoff]
+    cnvAmpl = cnv[cnv["alteration"] == "gain"]
+    # cnvLoss = cnv[(cnv["alteration"] < del_cutoff) & (cnv["alteration"] > -0.45)]
+    cnvLoss = cnv[cnv["alteration"] == "loss"]
 
     # # Debug. is the position of interest filtered out?
     # cnvLossDebug = cnvLoss[cnvLoss["feature"] == "chr22-0106"]
@@ -64,24 +63,26 @@ def filterCNV(cnvFrame,varFrame,ALL_FREQ=0.3,READ_DP=15,del_cutoff=-0.1,gain_cut
     vars = vars[vars['Func.refGene'] != 'intronic'] # include only exonic variants
     vars["Chr"] = vars["Chr"].replace(regex=r'X',value = 23) # rename chromosome X to 23
     vars["Chr"] = vars["Chr"].replace(regex=r'Y',value = 24) # rename chromosome Y to 24
+    vars["Chr"] = vars["Chr"].astype(str)
+    vars = vars[vars["Chr"].str.match("\d")] # remove all non digit-like strings
     vars["Chr"] = vars["Chr"].astype("int")
-    vars = vars[vars['AF'].astype("float") >= ALL_FREQ]
+    vars = vars[vars['AF'].str.replace(",",".").astype("float") >= ALL_FREQ]
     vars = vars[vars['DP'].astype("int") >= READ_DP]
-    varRel = vars[vars['ExonicFunc.refGene'] != 'synonymous SNV']
+    varRel = vars
+    # varRel = vars[vars['ExonicFunc.refGene'] != 'synonymous SNV']
 
     # # Debug. is the position of interest filtered out?
     # varRelDebug = varRel[varRel["Start"] == 30051625]
     # print(varRelDebug)
 
-
     # iterate through only relevant mutations and whole cnv. Make intersection
     cnvAmplList = []
     for index, row in cnvAmpl.iterrows():
-        startCNV = row['start']
-        endCNV = row['end']
+        startCNV = row["loc.start"]
+        endCNV = row["loc.end"]
         chromCNV = row['chrom']
         currentDF = varRel[(varRel["Start"].between(startCNV, endCNV)) & (varRel["Chr"] == chromCNV)]
-        currentDF['info'] = currentDF['Gene.refGene'].astype('str') + ':' + currentDF['Chr'].astype('str') + ':' + currentDF['Start'].astype('str') + ':' + currentDF['Ref'] + ':' + currentDF['Alt'] # + ':' + currentDF['AAChange.refGene'].astype('str')
+        currentDF['info'] = currentDF['Gene.refGene'].astype('str') + ':' + currentDF['Chr'].astype('str') + ':' + currentDF["Start"].astype('str') + ':' + currentDF['Ref'] + ':' + currentDF['Alt'] # + ':' + currentDF['AAChange.refGene'].astype('str')
     
         if len(currentDF) > 0:
             cnvAmplList.extend(currentDF['info'].tolist())
@@ -89,11 +90,11 @@ def filterCNV(cnvFrame,varFrame,ALL_FREQ=0.3,READ_DP=15,del_cutoff=-0.1,gain_cut
 
     cnvLossList = []
     for index, row in cnvLoss.iterrows():
-        startCNV = row['start']
-        endCNV = row['end']
+        startCNV = row["loc.start"]
+        endCNV = row["loc.end"]
         chromCNV = row['chrom']
         currentDF = varRel[(varRel["Start"].between(startCNV, endCNV)) & (varRel["Chr"] == chromCNV)]
-        currentDF['info'] = currentDF['Gene.refGene'].astype('str') + ':' + currentDF['Chr'].astype('str') + ':' + currentDF['Start'].astype('str') + ':' + currentDF['Ref'] + ':' + currentDF['Alt'] # + ':' + currentDF['AAChange.refGene'].astype('str')
+        currentDF['info'] = currentDF['Gene.refGene'].astype('str') + ':' + currentDF['Chr'].astype('str') + ':' + currentDF["Start"].astype('str') + ':' + currentDF['Ref'] + ':' + currentDF['Alt'] # + ':' + currentDF['AAChange.refGene'].astype('str')
     
         if len(currentDF) > 0:
             cnvLossList.extend(currentDF['info'].tolist())
@@ -122,12 +123,18 @@ cnvID,tumorID = sourceIntegrity()
 
 # read a .idat and tumorID pair into a dataframe
 for f_cnv,f_var in zip(cnvID,tumorID):
-    cnv_file = glob.glob(path_cnv + f_cnv + '.bins.igv')[0]
-    var_file = glob.glob(path_var + str(f_var) + '-DNA-FFPE_MPILEUP_SNP.recode_filtered_DP15_AF0.1.hg19_multianno._sort.csv')[0]
+    try:
+        cnv_file = glob.glob(path_cnv + f_cnv + '.MAXDENS.segments.seg')[0]
+    except:
+        pass
+    try:
+        var_file = glob.glob(path_var + str(f_var) + '-DNA-FFPE_PLATYPUS_comp_INDEL.recode_filtered_DP15-1.hg19_multianno._sort.csv')[0]
+    except:
+        pass
     print(var_file)
-    cnvFrame = pd.read_csv(cnv_file, sep="\t", header=0, names=['chrom', 'start', 'end', 'feature', 'metrics'])
+    cnvFrame = pd.read_csv(cnv_file, sep="\t", header=0, names=['ID', 'chrom', 'loc.start', 'loc.end', 'num.mark', 'bstat', 'pval', 'seg.mean', 'seg.median', 'alteration'])
     varFrame = pd.read_csv(var_file, sep=';')
-    geneAmpl, geneLoss = filterCNV(cnvFrame,varFrame,del_cutoff=-THRESHOLD,gain_cutoff=THRESHOLD)
+    geneAmpl, geneLoss = filterCNV(cnvFrame,varFrame)
     dfAmpl = geneNames(dfAmpl,geneAmpl,f_var)
     dfLoss = geneNames(dfLoss,geneLoss,f_var)
     print('mutation file : ',var_file,' is ready')
@@ -135,5 +142,5 @@ for f_cnv,f_var in zip(cnvID,tumorID):
 
 # dfAmpl = dfAmpl[dfAmpl.duplicated(subset=['gene'], keep=False)]
 # dfLoss = dfLoss[dfLoss.duplicated(subset=['gene'], keep=False)]
-dfLoss.to_csv(TUMOR + "_lost.csv")
-dfAmpl.to_csv(TUMOR + "_ampl.csv")
+dfLoss.to_csv(TUMOR + "_lost_INDEL.csv")
+dfAmpl.to_csv(TUMOR + "_ampl_INDEL.csv")
